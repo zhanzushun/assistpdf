@@ -1,0 +1,5 @@
+APIKEY = 'xxx'
+ASSISTANT_ID = 'asst_xxx'
+STATIC_DIR = '/some/where/'
+UPLOAD_HOST_PORT = 'http://xx.xx.xx.xx'
+API_PREFIX = 'some_prefix'
