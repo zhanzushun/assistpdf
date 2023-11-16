@@ -51,6 +51,12 @@ assistant = client.beta.assistants.retrieve(
 thread = client.beta.threads.create()
 
 # -------------files_db-----------------
+
+def to_file(fname, content):
+    os.makedirs(os.path.join(STATIC_FOLDER_PATH, 'download'), exist_ok=True)
+    with open(os.path.join(STATIC_FOLDER_PATH, 'download', fname), "w") as f:
+        f.write(content)
+
 tasks_status = {}
 
 def save_tasks():
@@ -142,42 +148,62 @@ def ask(task_id, local_file_id_list, prompt):
         )
 
     while True:
-        run = client.beta.threads.runs.retrieve(thread_id=thread.id,run_id=run.id)
+        try:
+            run = client.beta.threads.runs.retrieve(thread_id=thread.id,run_id=run.id)
 
-        if  (task_id not in tasks_status) or (run.status != tasks_status[task_id]):
-            logging.info(f'task_id={task_id}, status changed to={run.status}')
-            if run.status != 'completed':
-                tasks_status[task_id] = run.status
-                save_tasks()
+            if  (task_id not in tasks_status) or (run.status != tasks_status[task_id]):
+                logging.info(f'task_id={task_id}, status changed to={run.status}')
 
-        if run.status == 'completed':
-            break
-        time.sleep(3)
+                if run.status == 'completed':
+                    messages = client.beta.threads.messages.list(thread_id=thread.id).data
+                    logging.info(messages[0])
+                    msg_text = get_msg_text(messages[0])
+                    tasks_status[task_id] = 'done_' + msg_text
+                    save_tasks()
+                    return
+                
+                if run.status in ['failed', 'cancelled', 'expired']:
+                    logging.info(messages[0])
+                    tasks_status[task_id] = f'done_任务失败，详细信息={run}'
+                    save_tasks()
+                    return
 
-    messages = client.beta.threads.messages.list(thread_id=thread.id).data
-    msg_text = get_msg_text(messages[0])
-    logging.info(msg_text)
-    tasks_status[task_id] = 'done_' + msg_text
-    save_tasks()
+            time.sleep(3)
+
+        except Exception as e:
+            logging.exception('failed')
+            tasks_status[task_id] = f'done_任务失败，详细信息={str(e)}'
+            save_tasks()
+            return
 
 
 def get_msg_text(message):
     message_content = message.content[0].text
-    # annotations = message_content.annotations
-    # citations = []
+    annotations = message_content.annotations
+    citations = []
+    now = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-    # for index, annotation in enumerate(annotations):
-    #     message_content.value = message_content.value.replace(annotation.text, f' [{index}]')
+    for index, annotation in enumerate(annotations):
+        index = f'{now}_{index}'
+        message_content.value = message_content.value.replace(annotation.text, f' [{index}]')
 
-    #     if (file_citation := getattr(annotation, 'file_citation', None)):
-    #         cited_file = client.files.retrieve(file_citation.file_id)
-    #         citations.append(f'[{index}] {file_citation.quote} from {cited_file.filename}')
+        if (file_citation := getattr(annotation, 'file_citation', None)):
+            try:
+                cited_file = client.files.retrieve(file_citation.file_id)
+                citations.append(f'[{index}] 引用 {cited_file.filename}，“{file_citation.quote}”')
+            except:
+                logging.exception('failed to retrieve cited file')
 
-    #     elif (file_path := getattr(annotation, 'file_path', None)):
-    #         cited_file = client.files.retrieve(file_path.file_id)
-    #         citations.append(f'[{index}] Click <here> to download {cited_file.filename}')
+        elif (file_path := getattr(annotation, 'file_path', None)):
+            try:
+                cited_file = client.files.retrieve(file_path.file_id)
+                file_content = client.files.retrieve_content(file_path.file_id)
+                to_file(f'{index}_{cited_file.filename}', file_content)
+                citations.append(f'<{index}> 下载 {cited_file.filename}')
+            except:
+                logging.exception('failed to retrieve download file')
 
-    # message_content.value += '\n' + '\n'.join(citations)
+    message_content.value += '\n' + '\n'.join(citations)
     return message_content.value
 
 # -------- fast api --------
@@ -264,4 +290,8 @@ logging.info('====db loaded, app started====')
 
 if __name__ == '__main__':
     # logging.info(client.beta.assistants.files.list(assistant.id))
-    ask('task_1', ['20231109_162114.txt'], '本期二级市场信用债成交规模缩减了多少')
+    #ask('task_1', ['20231109_162114.txt'], '本期二级市场信用债成交规模缩减了多少')
+    cited_file = client.files.retrieve('file-af6Cip7IOaEL3n9hTL1pw3ck')
+    print(cited_file)
+    file_data = client.files.retrieve_content("file-af6Cip7IOaEL3n9hTL1pw3ck")
+    print(file_data)
