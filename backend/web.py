@@ -50,6 +50,11 @@ assistant = client.beta.assistants.retrieve(
 
 thread = client.beta.threads.create()
 
+def recreate_thread():
+    global thread
+    thread = client.beta.threads.create()
+
+
 # -------------files_db-----------------
 
 def to_file(fname, content):
@@ -135,20 +140,33 @@ def get_or_upload_file(local_file_id, original_file_name = ''):
 # -------------end of files_db-----------------
 
 def ask(task_id, local_file_id_list, prompt):
-    message = client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=prompt,
-        file_ids=[get_or_upload_file(local_file_id).get('openai_file_id') for local_file_id in local_file_id_list]
-    )
-
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=assistant.id,
+    try:
+        message = client.beta.threads.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=prompt,
+            file_ids=[get_or_upload_file(local_file_id).get('openai_file_id') for local_file_id in local_file_id_list]
         )
+    except:
+        logging.exception(f'create message failed, try to create thread')
+        recreate_thread()
+        message = None
 
-    while True:
-        try:
+    try:
+        if (message is None):
+            message = client.beta.threads.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content=prompt,
+                file_ids=[get_or_upload_file(local_file_id).get('openai_file_id') for local_file_id in local_file_id_list]
+            )
+
+        run = client.beta.threads.runs.create(
+            thread_id=thread.id,
+            assistant_id=assistant.id,
+            )
+
+        while True:
             run = client.beta.threads.runs.retrieve(thread_id=thread.id,run_id=run.id)
 
             if  (task_id not in tasks_status) or (run.status != tasks_status[task_id]):
@@ -170,11 +188,11 @@ def ask(task_id, local_file_id_list, prompt):
 
             time.sleep(3)
 
-        except Exception as e:
-            logging.exception('failed')
-            tasks_status[task_id] = f'done_任务失败，详细信息={str(e)}'
-            save_tasks()
-            return
+    except Exception as e:
+        logging.exception('run failed')
+        tasks_status[task_id] = f'done_任务失败，详细信息={str(e)}'
+        save_tasks()
+        return
 
 
 def get_msg_text(message):
@@ -222,6 +240,7 @@ async def embed_file_web(local_file_id:str=Body(...), original_file_name:str=Bod
 
 @app.post(f"/{config.API_PREFIX}/upload_file")
 async def upload_file_web(background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)):
+    logging.info(f'/upload_file')
     file = files[0]
     original_file_name = file.filename
     contents = await file.read()
@@ -291,7 +310,8 @@ logging.info('====db loaded, app started====')
 if __name__ == '__main__':
     # logging.info(client.beta.assistants.files.list(assistant.id))
     #ask('task_1', ['20231109_162114.txt'], '本期二级市场信用债成交规模缩减了多少')
-    cited_file = client.files.retrieve('file-af6Cip7IOaEL3n9hTL1pw3ck')
-    print(cited_file)
-    file_data = client.files.retrieve_content("file-af6Cip7IOaEL3n9hTL1pw3ck")
-    print(file_data)
+    # cited_file = client.files.retrieve('file-af6Cip7IOaEL3n9hTL1pw3ck')
+    # print(cited_file)
+    # file_data = client.files.retrieve_content("file-af6Cip7IOaEL3n9hTL1pw3ck")
+    # print(file_data)
+    client.beta.threads.runs.cancel('run_9BrfjpbDy9uD395mYebbU026', thread_id='thread_b78RemhLTDbHYJMaufHnZt8c')

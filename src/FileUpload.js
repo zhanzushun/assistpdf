@@ -20,12 +20,12 @@ export const FileUpload = ({ onFileIdList }) => {
       setDoing(true)
       const response = await axios.post(`${API_HOST_PORT}/${API_PREFIX}/upload_file`, formData);
       console.log('upload.response=' + JSON.stringify(response.data))
-      if ('local_file_id' in response.data){
-        window.alert('文件上传成功')
-        fetchUploadedFiles()
-      }
+      var local_file_id = response.data['local_file_id']
+      window.alert('文件上传成功: ' + local_file_id)
+      fetchUploadedFiles()
     } catch (error) {
-        console.error("Error during the POST request:", error);
+      window.alert('文件上传失败, 详细信息:' + JSON.stringify(error))
+      console.error("Error during the POST request:", error);
     }
     setMessage('点这里上传文件')
     setDoing(false)
